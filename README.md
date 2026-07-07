@@ -123,12 +123,8 @@ The dashboard contains the following analytical modules:
 
 - Executive Overview
 - Clinical Outcomes
-- Facility Capacity
-- Workforce Analytics
-- Governance Analytics
-- Facility Performance Ranking
-- Risk Analytics
-- Intervention Opportunities
+- Facility Performance
+- Province Analytics
 - Automated Recommendations
 
 ---
