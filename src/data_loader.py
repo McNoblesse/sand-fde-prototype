@@ -144,7 +144,7 @@ class DataLoader:
             object_columns = df.select_dtypes(include="object").columns
 
             for column in object_columns:
-                df[column] = df[column].apply(lambda x: mapping.get(x, x))
+                df[column] = df[column].apply(lambda x: mapping.get(str(x).strip().upper(), x))
 
     # ==========================================================
     # Parse Date Columns
@@ -177,16 +177,63 @@ class DataLoader:
                 if column in df.columns:
                     df[column] = pd.to_numeric(df[column],errors="coerce")
 
+    def fill_missing_numeric(self) -> None:
+        """
+        Replace missing numeric values with zero.
+        """
+        datasets = [
+            self.clinical,
+            self.facilities,
+            self.operations,
+            self.workers,
+            self.governance
+        ]
+
+        for df in datasets:
+
+            numeric_cols = df.select_dtypes(
+                include="number"
+            ).columns
+
+            df[numeric_cols] = df[numeric_cols].fillna(0)
+        
     # ==========================================================
     # Normalize Reporting Month
     # ==========================================================
 
     def normalize_reporting_month(self) -> None:
         """
-        Standardize reporting month format.
+        Standardize reporting dates and create
+        monthly and quarterly reporting fields.
         """
-        self.clinical["reporting_month"] = pd.to_datetime(self.clinical["reporting_month"])
 
+        self.clinical["reporting_month"] = pd.to_datetime(
+            self.clinical["reporting_month"],
+            errors="coerce"
+        )
+
+        self.clinical["year"] = (
+            self.clinical["reporting_month"].dt.year
+        )
+
+        self.clinical["month_number"] = (
+            self.clinical["reporting_month"].dt.month
+        )
+
+        self.clinical["month"] = (
+            self.clinical["reporting_month"].dt.month_name()
+        )
+
+        self.clinical["quarter"] = (
+            "Q" +
+            self.clinical["reporting_month"].dt.quarter.astype(str)
+        )
+
+        self.clinical["quarter_year"] = (
+            self.clinical["year"].astype(str)
+            + " "
+            + self.clinical["quarter"]
+        )
     # ==========================================================
     # Dataset Validation
     # ==========================================================
@@ -223,7 +270,25 @@ class DataLoader:
         """
         report = self.validate_dataset(self.clinical,"clinical","facility_id")
         report["duplicate_reporting_periods"] = int(self.clinical.duplicated(subset=["facility_id","reporting_month"]).sum())
-        report["unique_reporting_months"] = self.clinical["reporting_month"].nunique()
+        report["unique_reporting_months"] = (
+            self.clinical["reporting_month"].nunique()
+        )
+
+        report["quarter_distribution"] = (
+            self.clinical["quarter_year"]
+            .value_counts()
+            .sort_index()
+            .to_dict()
+        )
+
+        report["date_range"] = {
+            "start": str(
+                self.clinical["reporting_month"].min().date()
+            ),
+            "end": str(
+                self.clinical["reporting_month"].max().date()
+            )
+        }
         report["unique_facilities"] = self.clinical["facility_id"].nunique()
 
         return report
@@ -262,15 +327,39 @@ class DataLoader:
     # ==========================================================
     # Facility Master Builder
     # ==========================================================
-
     def build_facility_master(self) -> pd.DataFrame:
         """
         Create one integrated record per facility.
         """
         self.facility_master = (
-            self.facilities.merge(self.operations, on="facility_id", how="left")
-            .merge(self.workers, on="facility_id", how="left")
-            .merge(self.governance, on="facility_id", how="left"))
+            self.facilities
+            .merge(
+                self.operations,
+                on="facility_id",
+                how="left"
+            )
+            .merge(
+                self.workers,
+                on="facility_id",
+                how="left"
+            )
+            .merge(
+                self.governance,
+                on="facility_id",
+                how="left"
+            )
+            .drop_duplicates("facility_id")
+            .reset_index(drop=True)
+        )
+        
+        numeric_cols = self.facility_master.select_dtypes(
+            include="number"
+        ).columns
+
+        self.facility_master[numeric_cols] = (
+            self.facility_master[numeric_cols]
+            .fillna(0) 
+        )
 
         return self.facility_master
 
@@ -320,15 +409,11 @@ class DataLoader:
         # ------------------------------------------
 
         self.clean_text()
-
         self.clean_percentages()
-
         self.clean_booleans()
-
         self.clean_numeric_columns()
-
+        self.fill_missing_numeric()
         self.parse_dates()
-
         self.normalize_reporting_month()
 
         # ------------------------------------------
