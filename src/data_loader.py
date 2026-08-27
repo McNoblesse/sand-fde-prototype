@@ -3,8 +3,6 @@ from typing import Dict, Any
 
 import pandas as pd
 
-#this is a comment line 
-#this is another comment
 class DataLoader:
     """
     ETL pipeline for the Neonatal Health Analytics Platform.
